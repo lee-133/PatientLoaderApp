@@ -1,0 +1,6 @@
+{
+  "apiKey": "your-api-key-here",
+  "apiSecret": "your-api-secret-here",
+  "orgId": "your-organization-id",
+  "projectId": "your-project-id"
+}
