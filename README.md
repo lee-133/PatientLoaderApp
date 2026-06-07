@@ -163,8 +163,10 @@ HealthEx-patient-loader/
 - **Composable filters**: Each filter is a single predicate function; adding a new filter dimension is a one-function change.
 - **Patient-scoped consent**: Consent uses a token generated from the patient's own credentials, matching the API's requirement that consent be given as the patient.
 - **Language handling**: The API supports only `en` and `es`; any other language in the source data is mapped to `en` so the add call succeeds.
+- **Resilient bulk operations**: Both patient creation and consent tolerate per-patient failures: a failed call is logged and skipped rather than aborting the whole batch, so one bad record doesn't strand the patients already processed.
 
 ## Notes
 
 - Tier matching is done by bundle filename (via `index.html`) rather than by patient name.
 - For a large selection, the tool makes one create call and one consent flow per patient (sequentially), so a full-dataset run takes some time.
+- If an individual call fails, that patient is skipped with a logged warning and the run continues.
