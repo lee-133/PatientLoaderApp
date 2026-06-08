@@ -1,4 +1,4 @@
-# Secrets — never commit real credentials
+# Secrets! never commit real credentials
 config.json
 
 # Python virtual environment
@@ -11,16 +11,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# macOS cruft
+# macOS stuff
 .DS_Store
 __MACOSX/
-
-# Working notes / scratch (personal, may contain real API responses)
-notes/
-
-# Sample patient dataset — provided separately, not redistributed here.
-# Remove this line if you intend to commit the data.
-patientData/
 
 # IDE
 .vscode/
