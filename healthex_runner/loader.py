@@ -1,8 +1,19 @@
-# Upload workflow: filtered patients -> test patients -> project -> consent
-# It knows about patients and projects, and it calls client.py for every HTTP request
-# Endpoint paths and payload shapes are defined as constants / small builder
-# functions at the top, so if a field name or path differs from the docs it's
-# a one-line change here rather than buried in the flow
+# Upload workflow: the core pipeline of the tool
+#
+# Pipeline: create test patients -> add to a project (batched) ->
+# patient consent -> hand test patient IDs back so
+# the FHIR step (fhir.py) can verify one of them
+#
+# This module owns the what (the patient/project workflow)
+# and delegates the how (HTTP, auth) to client.py and auth.py
+# API Endpoint paths and request payloads are
+# in small builder functions at the top
+# so a field or path change is a one-line edit
+#
+# References:
+#   Create test patient: https://docs.healthex.io/api/create-a-test-patient
+#   Add patients:        https://docs.healthex.io/add-patients-to-projects/add-patients-by-api
+#   Update consent:      https://docs.healthex.io/api/update-consent-for-a-test-patient
 
 
 from __future__ import annotations
@@ -15,18 +26,18 @@ from .extract import PatientSummary
 
 # API endpoint paths
 def _create_test_patient_path(org_id: str) -> str:
-    return f"/v1/organizations/{org_id}/test-patients"
+    return f"/v1/organizations/{org_id}/test-patients"  # Create Test Patient
 
 
 def _add_patients_path(project_id: str) -> str:
-    return f"/v1/projects/{project_id}/patients"
+    return f"/v1/projects/{project_id}/patients"  # Add Test Patient to Project
 
 
 def _consent_path(project_id: str, patient_id: str) -> str:
-    return f"/v1/projects/{project_id}/test-patients/{patient_id}/consent"
+    return f"/v1/projects/{project_id}/test-patients/{patient_id}/consent"  # Update Consent (As Test Patient)
 
 
-# Build the body for CREATING a test patient
+# Build body for creating test patient
 def _create_payload(summary: PatientSummary) -> dict[str, Any]:
     return {
         "firstName": summary.first_name or "Test",
@@ -34,9 +45,10 @@ def _create_payload(summary: PatientSummary) -> dict[str, Any]:
     }
 
 
-# Build a per-patient object for the ADD-TO-PROJECT call
-# Uses the real server-generated email captured at creation
+# Build per-patient object for the add to project call
+# Uses the email captured at test patient creation
 # and includes contactPreference alongside languagePreference
+# contactPreference is required for patient consent API call
 def _add_payload(created: "CreatedPatient") -> dict[str, Any]:
     return {
         "email": created.email,
@@ -47,7 +59,8 @@ def _add_payload(created: "CreatedPatient") -> dict[str, Any]:
     }
 
 
-# What we get back after creating a test patient
+# Patient Summary: What we get back
+# after creating a test patient
 @dataclass
 class CreatedPatient:
     summary: PatientSummary
@@ -56,8 +69,8 @@ class CreatedPatient:
     password: Optional[str] = None
 
 
-# Create one test patient
-# Capture id, email, and one-time password
+# Create single test patient
+# Capture id, email, and password
 def create_test_patient(
     client: HealthExClient, org_id: str, summary: PatientSummary
 ) -> CreatedPatient:
@@ -85,9 +98,9 @@ def add_patients_to_project(
     return client.post(_add_patients_path(project_id), json=payload) or {}
 
 
-# Opt a test patient in using patient token from
-# the credentials captured at creation and
-# call consent with that token
+# Opt a test patient in using patient token
+# from the creds captured at creation
+# and call consent with that token
 def set_consent(
     project_id: str,
     created: CreatedPatient,
@@ -97,14 +110,14 @@ def set_consent(
 ) -> Any:
     if not created.email or not created.password:
         raise HealthExAPIError(
-            f"missing patient credentials for {created.summary.full_name}; "
-            "cannot mint patient token for consent"
+            f"missing test patient credentials for {created.summary.full_name}; "
+            "cannot create test patient token for consent"
         )
-    # 1) Create patient token from the patient's own email/password
+    # Create test patient token from the patient's own email/password
     try:
         token = patient_token(created.email, created.password, base_url=base_url)
     except AuthError as exc:
-        raise HealthExAPIError(f"patient token failed: {exc}") from exc
+        raise HealthExAPIError(f"test patient token failed: {exc}") from exc
 
     # 2) Call consent with the PATIENT token
     import requests
@@ -130,7 +143,7 @@ def set_consent(
 
 
 # Dry Run: Print the exact endpoints + payloads
-# for the full sequence WITHOUT sending anything
+# for the full sequence without sending anything
 # Uses the same builder functions as the real path
 # so what's shown is exactly what would be sent
 def dry_run(
@@ -159,7 +172,7 @@ def dry_run(
 
     # Step 2: add to project (single batch)
     # Uses placeholders for the email
-    print("\n--- Step 2: add patients to project (single batch) ---")
+    print("\n--- Step 2: add test patients to project (single batch) ---")
     placeholder_created = [
         CreatedPatient(
             summary=s,
@@ -175,10 +188,10 @@ def dry_run(
     }
     show("POST", _add_patients_path(project_id), add_body)
 
-    # Step 3: consent (per patient, using a patient token)
+    # Step 3: consent (per patient, using a PATIENT token)
     if do_consent:
         print("\n--- Step 3: consent (per patient, uses PATIENT token) ---")
-        print("  (first mints a patient token:)")
+        print("  (first creates patient token:)")
         show(
             "POST",
             "/v1/auth/token",
@@ -187,7 +200,7 @@ def dry_run(
                 "password": "<from-create-response>",
             },
         )
-        print("  (then calls consent with that patient token:)")
+        print("  (then calls consent with that test patient token:)")
         for c in placeholder_created:
             show(
                 "POST",
@@ -195,12 +208,21 @@ def dry_run(
                 {"consentStatus": "OPTED_IN"},
             )
 
+    # Step 4: verify via FHIR. Read-only GET with no body
+    # the live flow verifies the first created patient
+    # so we preview that same call
+    from .fhir import _everything_path
+
+    print("\n--- Step 4: verify via FHIR (read-only, no body) ---")
+    first = placeholder_created[0]
+    show("GET", _everything_path(first.patient_id))
+
     print("\n=== END DRY RUN (nothing was sent) ===")
 
 
 # Run the full sequence and return created patients
-# Returns the created patients (with ids) so
-# the FHIR step has something to verify
+# Returns the created patients (with ids)
+# so the FHIR step has something to verify
 def upload(
     client: HealthExClient,
     org_id: str,
