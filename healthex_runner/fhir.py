@@ -1,7 +1,10 @@
-# FHIR verification step - prove it works
-# Takes a created patient id, pulls their record back from the HealthEx FHIR
-# server via the $everything API, and formats a short human-readable summary
-# so the CLI can show "here's the data we found for this patient."
+# FHIR verification step: the "prove it works" part
+#
+# Takes one created test patient ID (handed over from loader.py via cli.py)
+# and pulls their record back from the HealthEx FHIR server with the
+# $everything API, then prints it: both a short summary and the full bundle
+#
+# Reference: https://docs.healthex.io/fhir-server
 
 
 from __future__ import annotations
@@ -9,12 +12,11 @@ from typing import Any, Optional
 from .client import HealthExClient, HealthExAPIError
 
 
-# API endpoint path for $everything API
 def _everything_path(patient_id: str) -> str:
-    return f"/FHIR/R4/Person/{patient_id}/$everything"
+    return f"/FHIR/R4/Person/{patient_id}/$everything"  # FHIR $everything API
 
 
-# Fetch patient FHIR bundle.
+# Fetch test patient FHIR bundle
 def fetch_patient_everything(
     client: HealthExClient,
     patient_id: str,
@@ -72,8 +74,8 @@ def summarize_for_display(bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Summarize one patient. Returns both the parsed summary and the full
-# bundle, so the caller can print the complete FHIR response.
+# Summarize patient: Returns both the parsed summary and the full bundle
+# so the caller can print the complete FHIR response
 def verify_patient(client: HealthExClient, patient_id: str) -> dict[str, Any]:
     bundle = fetch_patient_everything(client, patient_id)
     summary = summarize_for_display(bundle)
@@ -81,7 +83,7 @@ def verify_patient(client: HealthExClient, patient_id: str) -> dict[str, Any]:
     return summary
 
 
-# Pretty-print the entire FHIR bundle as formatted JSON.
+# Pretty-print the entire FHIR bundle as formatted JSON
 def print_full_bundle(bundle: dict[str, Any]) -> None:
     import json
 
