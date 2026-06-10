@@ -1,8 +1,15 @@
-# Thin HTTP layer over the HealthEx API.
-# This is the single place that turns "call endpoint X" into an authenticated
-# HTTP request. It takes an auth instance (from auth.py) and attaches the
-# bearer header to every call, builds full URLs from a base URL + path, and
-# turns failed responses into a clear HealthExAPIError.
+# Thin HTTP layer over the HealthEx API
+#
+# The single place that turns: "call endpoint X" into an
+# authenticated HTTP request: takes an auth instance (from auth.py)
+# attaches the bearer header to every call
+# builds full URLs from base URL + path
+# and turns failed responses into a clear HealthExAPIError
+#
+# loader.py and fhir.py hold patient and project logic
+# and call this for the actual HTTP
+# Both the REST API and the FHIR server share one
+# base URL and JWT, so a single client covers both
 
 
 from __future__ import annotations

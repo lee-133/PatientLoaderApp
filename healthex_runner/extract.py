@@ -1,7 +1,9 @@
-# Flatten bundle into a compact summary.
-# Iterate bundles once and produce a small PatientSummary
+# Flatten bundle into a compact summary
+# Iterate each bundle once and produce a small PatientSummary
 # (name, age, gender, language, state, complexity tier, active conditions)
-# filters.py then operates on these summaries, never the raw bundles
+# Bundles are ~7MB each, so we parse once into these summaries and let
+# filters.py operate on them: never re-reading the raw bundles
+
 
 from __future__ import annotations
 

@@ -1,12 +1,20 @@
-# Composable filters over PatientSummary objects.
-# Scope: complexity tier, specific condition match, active-condition
-# count range, and demographics (age range, gender, language, state)
+# Composable filters over PatientSummary objects
+#
+# Each filter is a small function that returns a predicate
+# (a function that takes a PatientSummary and returns True/False)
+# They're combined with AND, so a patient must pass every selected filter to match
+#
+# The point of this shape: adding a new filter
+# is a single new function here
+# nothing else in the codebase changes
+#
+# Scope: complexity tier, specific condition match, active-condition count
+# range, and demographics (age range, gender, language, state)
 
 
 from __future__ import annotations
 from typing import Callable, Iterable, Optional
 from .extract import PatientSummary
-
 
 Predicate = Callable[[PatientSummary], bool]
 

@@ -1,6 +1,6 @@
 # HealthEx Patient Loader
 
-A lightweight Python CLI that loads sample patient FHIR bundles into a HealthEx project. It reads the provided sample dataset, lets you select patients either in full or by a set of filters (complexity tier, condition, age, gender, language, state), creates them as test patients, adds them to a project, handles patient consent, and verifies the whole pipeline by calling the FHIR `$everything` API and printing the returned record.
+A lightweight Python CLI that loads sample patient FHIR bundles into a HealthEx project. It reads the provided sample dataset, lets you select patients in full or by a set of filters (complexity tier, condition, age, gender, language, state), creates them as test patients, adds them to a project, handles patient consent, and verifies the whole pipeline by calling the FHIR `$everything` API and printing the returned record.
 
 ## What it does
 
@@ -16,7 +16,7 @@ Given the HealthEx sample patient dataset, the tool runs this pipeline:
 
 ## How complexity tiers work
 
-The four complexity tiers (Exceptionally Healthy, Generally Healthy, Chronic Conditions, Complex Conditions). They come from the dataset's own `index.html` which lists each patient under a tier heading and links them to their bundle file. The tool parses that file to map each bundle to its tier by filename. This keeps the classification authoritative (it's HealthEx's own grouping) and requires no network calls.
+The four complexity tiers (Exceptionally Healthy, Generally Healthy, Chronic Conditions, Complex Conditions) come from the dataset's own `index.html`, which lists each patient under a tier heading and links them to their bundle file. The tool parses that file to map each bundle to its tier by filename. This keeps the classification authoritative (it's HealthEx's own grouping) and requires no network calls.
 
 ## Requirements
 
@@ -61,7 +61,7 @@ cp config.example.json config.json
 
 ### Configuration
 
-`config.json` holds your credentials and target project. The fields:
+`config.json` holds your credentials and target project. It is gitignored and must never be committed. The fields:
 
 | Field        | Description                                              |
 |--------------|----------------------------------------------------------|
@@ -129,8 +129,11 @@ Proceed with upload? [y/N]: y
 add-to-project: success=1 errors=0 duplicates=0
 Created 1 test patient(s).
 
-Verifying via FHIR $everything for Hayden Schroeder ...
-FHIR round trip succeeded — the patient's data is retrievable.
+ Run FHIR $everything API for test patient: Hayden Schroeder (id <patient-id>) ...
+  name:            Hayden Schroeder
+  total resources: 2
+  resource counts: {'Person': 1, 'Patient': 1}
+  sample conditions: []
 
 --- Full FHIR bundle ---
 { ... full FHIR JSON ... }
