@@ -1,6 +1,17 @@
-# JWT token creating for the HealthEx API.
-# JWT token valid for 24 hours.
-# Reference: https://docs.healthex.io/authentication
+# Authentication for the HealthEx APIs
+#
+# Org token: a JWT created from the org's API key + secret, used for most calls
+#   Held in memory and reused for the entire session
+#   Used by client.py, which attaches it as a Bearer header on every request
+#
+# Patient token: a JWT created from a single test patient's own credentials
+#   (email + password captured at creation), used only for the consent step
+#   to allow FHIR $everything API to work
+#   Used by loader.py during set_consent
+#
+# References:
+#   Org Token: https://docs.healthex.io/api/generate-token
+#   Patient Token: https://docs.healthex.io/test-patients#2-generate-a-token
 
 
 from __future__ import annotations
