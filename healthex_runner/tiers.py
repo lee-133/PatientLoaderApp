@@ -1,5 +1,16 @@
-# Complexity-tier lookup, sourced from the dataset's own index.html
-# This reads only files provided in the dataset - no network calls
+# Complexity-tier lookup, sourced from dataset's own index.html
+#
+# The four tiers (Exceptionally Healthy / Generally Healthy / Chronic /
+# Complex) aren't in the FHIR bundles. The dataset contains an index.html 
+# that lists each patient under a tier heading and links them to their bundle file
+# so we parse it into a {filename -> tier} map
+#
+# The mapping is matched by filename, not patient name
+# extract.py resolves each bundle's tier by its filename
+# reliable because the published roster includes middle names
+# the bundles don't carry, so name-matching would miss
+#
+# Reads only files provided in the dataset: no network calls
 
 
 from __future__ import annotations
@@ -7,7 +18,6 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
-
 
 TIERS = (
     "exceptionally_healthy",
