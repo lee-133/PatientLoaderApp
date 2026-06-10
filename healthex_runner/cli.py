@@ -1,12 +1,23 @@
-# Interactive CLI: filter sample patients and upload them to a project.
+# Interactive CLI: filter sample patients and upload them to a project
+#
+# This is the orchestration layer: it drives the flow and calls into the other modules
+# (extract, filters, loader, fhir)
+# it holds no API logic itself
+#
 # Flow:
-#  1. load config (apiKey/apiSecret/orgId/projectId)
-#  2. summarize the data folder (bundles + index.html for tiers)
-#  3. ask: upload ALL, or FILTER by criteria
-#  4. if filtering, collect criteria (tier / condition / age / gender / language / state)
-#  5. show the matched patients and confirm
-#  6. authenticate, create test patients, add to project, set consent
-#  7. verify patient by calling the FHIR $everything API and printing the data
+#  1. Load config (apiKey/apiSecret/orgId/projectId)
+#  2. Summarize the data folder (bundles + index.html for tiers)
+#  3. Ask: upload ALL, or FILTER by
+#  4. If filtering, collect filters (tier / condition / age / gender / language / state)
+#       Re-prompts on invalid input
+#       Allows blank entries for filters as well
+#  5. Show matched test patients and confirm before anything is sent
+#       Can re-filter if needed
+#  6. Authenticate -> create test patients -> add to project -> set consent
+#  7. Verify one patient via the FHIR $everything API and print the result
+#
+# Also has --dry-run option to test printing requests
+# without sending any actual data/requests
 
 
 from __future__ import annotations
@@ -51,14 +62,33 @@ def _confirm(msg: str) -> bool:
 
 
 def _prompt_int(msg: str) -> Optional[int]:
-    raw = _prompt(msg)
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        print("  (not a number, skipping)")
-        return None
+    # Prompt for an integer. Blank returns None (skip)
+    # Re-prompts on non-numeric input rather than silently skipping
+    while True:
+        raw = _prompt(msg)
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            print("  Please enter a whole number, or leave blank to skip.")
+
+
+def _prompt_choice(msg: str, allowed: dict[str, str]) -> Optional[str]:
+    # Prompt until the input matches an allowed value, or is blank
+    # `allowed` maps accepted inputs (lowercased) to the canonical value
+    # returned, e.g. {"male": "male", "m": "male", "female": "female", "f":
+    # "female"}. Input is matched case-insensitively. On an unrecognized
+    # entry, the user is told the valid options and asked again.
+
+    options = sorted(set(allowed.values()))
+    while True:
+        raw = _prompt(msg).lower()
+        if not raw:
+            return None
+        if raw in allowed:
+            return allowed[raw]
+        print(f"  Please enter one of: {', '.join(options)} (or leave blank to skip).")
 
 
 # Filter collection
@@ -71,17 +101,25 @@ def collect_filters(summaries: list[PatientSummary]) -> list:
     print("\nComplexity tiers:")
     for i, t in enumerate(TIERS, 1):
         print(f"  {i}. {TIER_LABELS[t]}")
-    raw = _prompt("Tiers to include (e.g. '3,4', blank = any): ")
-    if raw:
-        chosen = []
-        for part in raw.split(","):
-            part = part.strip()
-            if part.isdigit() and 1 <= int(part) <= len(TIERS):
-                chosen.append(TIERS[int(part) - 1])
+    while True:
+        raw = _prompt("Tiers to include (e.g. '3,4', blank = any): ")
+        if not raw:
+            break
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        valid = [p for p in parts if p.isdigit() and 1 <= int(p) <= len(TIERS)]
+        if len(valid) != len(parts):
+            print(
+                f"  Please enter tier numbers between 1 and {len(TIERS)}, "
+                "comma-separated (or leave blank for any)."
+            )
+            continue
+        chosen = [TIERS[int(p) - 1] for p in valid]
         if chosen:
             preds.append(F.by_tier(*chosen))
+        break
 
     # condition
+    # free-text substring match; no fixed value set to validate against
     cond = _prompt("Condition keyword(s), comma-separated (blank = any): ")
     if cond:
         terms = [c.strip() for c in cond.split(",") if c.strip()]
@@ -94,16 +132,23 @@ def collect_filters(summaries: list[PatientSummary]) -> list:
         preds.append(F.age_between(lo, hi))
 
     # gender
-    gender = _prompt("Gender (male/female, blank = any): ")
+    gender = _prompt_choice(
+        "Gender (male/female, blank = any): ",
+        {"male": "male", "m": "male", "female": "female", "f": "female"},
+    )
     if gender:
         preds.append(F.by_gender(gender))
 
     # language
-    lang = _prompt("Language code (en/es, blank = any): ")
+    lang = _prompt_choice(
+        "Language code (en/es, blank = any): ",
+        {"en": "en", "english": "en", "es": "es", "spanish": "es"},
+    )
     if lang:
         preds.append(F.by_language(lang))
 
     # state
+    # free-text substring match; no fixed value set to validate against
     state = _prompt("State (e.g. 'New York', blank = any): ")
     if state:
         preds.append(F.by_state(state))
@@ -112,6 +157,7 @@ def collect_filters(summaries: list[PatientSummary]) -> list:
 
 
 # Show patient matches based on filters
+# cap the printed list so a big match doesn't flood the terminal
 def show_matches(matched: list[PatientSummary]) -> None:
     print(f"\n{len(matched)} patient(s) matched:")
     for s in matched[:50]:
@@ -134,12 +180,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--data",
         default="patientData",
         type=Path,
-        help="folder with patient .json bundles and index.html",
+        help="folder with test patient .json bundles and index.html",
     )
     parser.add_argument(
         "--no-consent",
         action="store_true",
-        help="skip the consent step (FHIR verify will then 403)",
+        help="skip the consent step (FHIR verify will fail)",
     )
     parser.add_argument(
         "--dry-run",
@@ -153,13 +199,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Reading bundles from {args.data} ...")
     summaries = summarize_dir(args.data)
     if not summaries:
-        sys.exit(f"no patient bundles found in {args.data}")
+        sys.exit(f"no test patient bundles found in {args.data}")
     tiered = sum(1 for s in summaries if s.tier)
-    print(f"Loaded {len(summaries)} patients ({tiered} with a tier from index.html).")
+    print(
+        f"Loaded {len(summaries)} test patients ({tiered} with a tier from index.html)."
+    )
 
     # Select patients, with the ability to retry filtering. Loops until the
     # user confirms a non-empty selection (returns `matched`), or chooses to
-    # quit / completes a dry run (returns early).
+    # quit / completes a dry run (returns early)
     while True:
         mode = _prompt("\nUpload [a]ll patients or [f]ilter? (a/f): ").lower()
         if mode.startswith("f"):
@@ -223,11 +271,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         sys.exit(f"upload failed: {exc}")
     print(f"\nCreated {len(created)} test patient(s).")
 
-    # FHIR verification on the first created patient
+    # FHIR verification on the first created test patient
     if created:
         first = created[0]
         print(
-            f"\nVerifying via FHIR $everything for {first.summary.full_name} "
+            f"\nRun FHIR $everything API for test patient: {first.summary.full_name} "
             f"(id {first.patient_id}) ..."
         )
         try:
@@ -236,7 +284,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"  total resources: {info['total_resources']}")
             print(f"  resource counts: {info['resource_counts']}")
             print(f"  sample conditions: {info['sample_conditions']}")
-            print("\nFHIR round trip succeeded — the patient's data is retrievable.")
             print("\n--- Full FHIR bundle ---")
             fhir.print_full_bundle(info["bundle"])
         except HealthExAPIError as exc:
